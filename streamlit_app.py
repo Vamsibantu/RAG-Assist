@@ -1,11 +1,13 @@
 import streamlit as st
-import requests
-import time
+import tempfile
+import os
+import fitz  # PyMuPDF
+from pathlib import Path
 
-# ── Configuration ────────────────────────────────────────────────────────────
-API_BASE_URL = "http://localhost:8000"
-UPLOAD_ENDPOINT = f"{API_BASE_URL}/upload"
-QUERY_ENDPOINT = f"{API_BASE_URL}/query"
+# ── Direct service imports (no FastAPI middleman) ────────────────────────────
+from src.config.pinecone_dp import pinecone_connection
+from src.services.rag_service import get_rag_response, rag_pipeline
+from src.core.constants import FALLBACK_MESSAGE
 
 ALLOWED_EXTENSIONS = ["pdf", "txt", "docx"]
 
@@ -55,8 +57,8 @@ st.markdown(
             padding: 1.5rem 1.75rem;
             margin-top: 1rem;
             border-left: 4px solid #4f8bf9;
-            color: #1a1a2e !important;   /* 👈 ADD THIS */
-}
+            color: #1a1a2e !important;
+        }
         .result-card .answer-text {
             font-size: 1.05rem;
             line-height: 1.75;
@@ -75,8 +77,8 @@ st.markdown(
             padding: 1.5rem 1.75rem;
             margin-top: 1rem;
             border-left: 4px solid #2ecc71;
-            color: #1a1a2e !important;   /* 👈 ADD THIS */
-
+            color: #1a1a2e !important;
+        }
 
         .error-card {
             background: linear-gradient(135deg, #fef4f4 0%, #fde8e8 100%);
@@ -128,20 +130,92 @@ if "upload_result" not in st.session_state:
 
 
 # ── Helper Functions ─────────────────────────────────────────────────────────
-def upload_files(files) -> dict:
-    """Send files to the FastAPI /upload endpoint."""
-    multipart = [("uploaded_files", (f.name, f.getvalue(), f.type)) for f in files]
-    response = requests.post(UPLOAD_ENDPOINT, files=multipart, timeout=300)
-    response.raise_for_status()
-    return response.json()
+def extract_pages_from_file(file_path: str, filename: str) -> list:
+    """Extract text pages from PDF, TXT, or DOCX files."""
+    ext = Path(filename).suffix.lower()
+    pages = []
+
+    if ext == ".pdf":
+        with fitz.open(file_path) as doc:
+            for page_idx, page in enumerate(doc):
+                text = page.get_text("text").strip()
+                if text:
+                    pages.append({
+                        "page_content": text,
+                        "filename": filename,
+                        "page_number": page_idx + 1,
+                        "file_path": file_path,
+                    })
+
+    elif ext == ".txt":
+        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+            text = f.read().strip()
+        if text:
+            pages.append({
+                "page_content": text,
+                "filename": filename,
+                "page_number": 1,
+                "file_path": file_path,
+            })
+
+    elif ext == ".docx":
+        try:
+            from docx import Document as DocxDocument
+            doc = DocxDocument(file_path)
+            text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+            if text:
+                pages.append({
+                    "page_content": text,
+                    "filename": filename,
+                    "page_number": 1,
+                    "file_path": file_path,
+                })
+        except ImportError:
+            st.warning(f"python-docx is not installed; skipped {filename}.")
+
+    return pages
+
+
+def process_uploaded_files(uploaded_files) -> dict:
+    """
+    Directly process Streamlit-uploaded files through the RAG pipeline:
+    extract text → split → embed → upsert to Pinecone.
+    """
+    try:
+        pinecone_connection()
+
+        all_pages = []
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            for f in uploaded_files:
+                file_path = os.path.join(tmpdir, f.name)
+                with open(file_path, "wb") as fp:
+                    fp.write(f.getvalue())
+                pages = extract_pages_from_file(file_path, f.name)
+                all_pages.extend(pages)
+
+            if not all_pages:
+                return {"error": "No readable content found in the uploaded files."}
+
+            chunks = rag_pipeline.split_chunks(all_pages)
+            embeddings = rag_pipeline.create_embeddings(chunks)
+            vectors_stored = rag_pipeline.add_embeddings_to_pinecone(embeddings)
+
+        return {
+            "documents_processed": len(all_pages),
+            "vectors_stored": vectors_stored,
+        }
+
+    except Exception as exc:
+        return {"error": str(exc)}
 
 
 def query_rag(query: str, top_k: int, min_score: float) -> dict:
-    """Send a query to the FastAPI /query endpoint."""
-    payload = {"query": query, "top_k": top_k, "min_score": min_score}
-    response = requests.post(QUERY_ENDPOINT, json=payload, timeout=120)
-    response.raise_for_status()
-    return response.json()
+    """Directly call the RAG service — no HTTP request needed."""
+    response = get_rag_response(query=query, top_k=top_k, min_score=min_score)
+    if hasattr(response, "dict"):
+        return response.dict()
+    return {"answer": str(response)}
 
 
 def truncate(text: str, length: int = 80) -> str:
@@ -235,19 +309,8 @@ with tab_upload:
 
     if submit_upload and uploaded_files:
         with st.spinner("Processing documents — this may take a moment…"):
-            try:
-                result = upload_files(uploaded_files)
-                st.session_state.upload_result = result
-            except requests.exceptions.ConnectionError:
-                st.session_state.upload_result = {
-                    "error": "Could not connect to the backend. Make sure the FastAPI server is running on port 8000."
-                }
-            except requests.exceptions.HTTPError as exc:
-                st.session_state.upload_result = {
-                    "error": f"Server returned an error: {exc.response.status_code} — {exc.response.text}"
-                }
-            except Exception as exc:
-                st.session_state.upload_result = {"error": str(exc)}
+            result = process_uploaded_files(uploaded_files)
+            st.session_state.upload_result = result
 
     # Display upload result
     if st.session_state.upload_result:
@@ -331,17 +394,6 @@ with tab_query:
                     {"query": query_input.strip(), "answer": answer_text}
                 )
 
-            except requests.exceptions.ConnectionError:
-                st.markdown(
-                    "<div class='error-card'>⚠️ Could not reach the backend. "
-                    "Ensure the FastAPI server is running on port 8000.</div>",
-                    unsafe_allow_html=True,
-                )
-            except requests.exceptions.HTTPError as exc:
-                st.markdown(
-                    f"<div class='error-card'>⚠️ Server error: {exc.response.status_code}</div>",
-                    unsafe_allow_html=True,
-                )
             except Exception as exc:
                 st.markdown(
                     f"<div class='error-card'>⚠️ {exc}</div>",
