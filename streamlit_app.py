@@ -1,3 +1,4 @@
+import html
 import streamlit as st
 import tempfile
 import os
@@ -110,11 +111,14 @@ st.markdown(
             transition: background 0.15s;
         }
         .history-item:hover { background: rgba(79,139,249,0.08); }
-        .history-q { font-weight: 600; color: #1a1a2e; }
+            .history-q { font-weight: 600; color: #eaf6ff; }
         .history-a { opacity: 0.72; margin-top: 2px; }
 
         /* Hide Streamlit branding */
-        #MainMenu, footer, header { visibility: hidden; }
+        #MainMenu, footer, header { }
+            /* Increase tab size */
+            .stTabs { max-width: 1500px !important; width: 100% !important; }
+            .stTabs .css-1wmy9hl { min-height: 600px; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -127,6 +131,9 @@ if "chat_history" not in st.session_state:
 
 if "upload_result" not in st.session_state:
     st.session_state.upload_result = None
+
+if "uploader_key" not in st.session_state:
+    st.session_state.uploader_key = 0
 
 
 # ── Helper Functions ─────────────────────────────────────────────────────────
@@ -223,14 +230,15 @@ def truncate(text: str, length: int = 80) -> str:
 
 
 # ── Sidebar ──────────────────────────────────────────────────────────────────
+
 with st.sidebar:
     st.markdown("### ⚙️  Settings")
 
     top_k = st.slider(
         "Top K results",
         min_value=1,
-        max_value=20,
-        value=5,
+        max_value=5,
+        value=3,
         help="Number of document chunks to retrieve.",
     )
     min_score = st.slider(
@@ -257,7 +265,7 @@ with st.sidebar:
                 f"""
                 <div class='history-item'>
                     <div class='history-q'>Q: {truncate(item["query"], 60)}</div>
-                    <div class='history-a'>{truncate(item["answer"], 90)}</div>
+                    <div class='history-a'>• {truncate(item["answer"], 60)}</div>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -271,7 +279,8 @@ st.markdown(
     """
     <div class='app-header'>
         <h1>🔍 RAG Assist</h1>
-        <p>Upload documents and ask questions — powered by Groq &amp; Gemini LLMs</p>
+        <p>AI-Powered Research Assistant <br> Powered by Groq • Gemini LLMs</p>
+        
     </div>
     """,
     unsafe_allow_html=True,
@@ -290,6 +299,7 @@ with tab_upload:
         type=ALLOWED_EXTENSIONS,
         accept_multiple_files=True,
         label_visibility="collapsed",
+        key=f"uploader_{st.session_state.uploader_key}",
     )
 
     if uploaded_files:
@@ -311,6 +321,9 @@ with tab_upload:
         with st.spinner("Processing documents — this may take a moment…"):
             result = process_uploaded_files(uploaded_files)
             st.session_state.upload_result = result
+            if "error" not in result:
+                st.session_state.uploader_key += 1
+                st.rerun()
 
     # Display upload result
     if st.session_state.upload_result:
@@ -370,6 +383,8 @@ with tab_query:
                     parts = answer_text.rsplit("\nSource: ", 1)
                     answer_text = parts[0]
                     source_url = parts[1].strip()
+
+                answer_text = html.escape(answer_text).replace("\n", "<br>")
 
                 # Build card HTML
                 source_html = ""

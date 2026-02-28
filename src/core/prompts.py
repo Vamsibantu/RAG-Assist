@@ -14,12 +14,11 @@ Instructions:
 3. Identify the most relevant and applicable information.
 4. Provide a comprehensive answer that includes:
    - Direct response to the question
-   - Relevant information and their sources
-   - Citation of specific document sections used
+   - List each document source only once at the end.
 5. If the information is insufficient or unclear, state the limitations clearly.
-6. Use clear reasoning and cite specific document references.
+6. Use clear reasoning and Do not mention document names inline; collect all sources and list them once at the end of your response.
 7. Keep your answer concise, accurate, and helpful.
-
+8.At the end of your response, include a 'Sources:' section listing each referenced document name exactly once.
 Please provide your detailed response:
 """
 

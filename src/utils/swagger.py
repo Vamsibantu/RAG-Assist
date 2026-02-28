@@ -45,7 +45,7 @@ queryendpoint = {
             "application/json": {
                 "example": {
                     "query": "What services does Lomaa IT Solutions provide?",
-                    "top_k": 5, # Optional, default is 5
+                    "top_k": 3, # Optional, default is 5
                     "min_score": 0.5 # Optional, default is 0.5
                 }
             }
