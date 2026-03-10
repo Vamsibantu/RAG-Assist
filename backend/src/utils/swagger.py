@@ -40,13 +40,15 @@ queryendpoint = {
     "summary": "Ask a question to the RAG chatbot",
     "description": "Submit a query to get an answer based on the processed documents. You can optionally filter the search to a specific filename.",
     "response_model": QuerySuccessResponse,
-    "requestBody": {
-        "content": {
-            "application/json": {
-                "example": {
-                    "query": "What services does Lomaa IT Solutions provide?",
-                    "top_k": 3, # Optional, default is 5
-                    "min_score": 0.5 # Optional, default is 0.5
+    "openapi_extra": {
+        "requestBody": {
+            "content": {
+                "application/json": {
+                    "example": {
+                        "query": "What services does Lomaa IT Solutions provide?",
+                        "top_k": 3, # Optional, default is 5
+                        "min_score": 0.5 # Optional, default is 0.5
+                    }
                 }
             }
         }

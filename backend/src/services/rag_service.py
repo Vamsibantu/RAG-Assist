@@ -55,18 +55,17 @@ def get_rag_response(query: str, top_k: int = 5, min_score: float = 0.8):
             
         context = "\n\n" + "\n\n---\n\n".join(formatted_docs)
 
-        guardrails = (
-            "Answer ONLY from the provided documents. "
-            "If the documents do not clearly answer, reply exactly with the fallback message. "
-            "Keep the answer concise (<= 50 words). "
-            "Do not add assumptions or external knowledge."
-        )
-
-        question_with_guardrails = f"{guardrails}\n\nUser question: {query}"
-
         # 4. Generate the final answer using the LLM
-        final_answer = llm_service.generate_answer(context=context, question=question_with_guardrails)
+        final_answer = llm_service.generate_answer(context=context, question=query)
         print(f"Answer: {final_answer}")
+
+        # Deduplicate source filenames (case-insensitive)
+        seen = {}
+        for doc in docs:
+            name = doc.metadata.get('filename', '')
+            if name and name.lower() not in seen:
+                seen[name.lower()] = name
+        unique_sources = list(seen.values())
 
         # Create response object
         response = QuerySuccessResponse(
@@ -75,6 +74,7 @@ def get_rag_response(query: str, top_k: int = 5, min_score: float = 0.8):
             message="Answer retrieved successfully",
             query=query,
             answer=final_answer,
+            sources=unique_sources,
         )
         
         # If the answer is the fallback message, don't include a source URL.

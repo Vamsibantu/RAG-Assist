@@ -38,6 +38,7 @@ class QuerySuccessResponse(BaseModel):
     message: str
     query: str
     answer: str
+    sources: List[str] = []
 
 class QueryNotFoundResponse(BaseModel):
     statusCode: int = 404
