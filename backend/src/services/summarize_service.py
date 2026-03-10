@@ -14,7 +14,6 @@ _STYLE_INSTRUCTIONS = {
     "bullets": "bullet-point summary listing the key points",
 }
 
-
 def get_summary(text: str, style: str = "detailed", llm: str = "groq") -> str:
     """
     Summarize `text` using Groq and the given summary style.

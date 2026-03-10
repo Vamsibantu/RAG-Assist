@@ -1,6 +1,6 @@
 import tempfile
 import os
-from src.config.pinecone_dp import pinecone_connection
+from backend.src.config.pinecone_db import pinecone_connection
 from src.utils.document_processor import RagPipeline
 from src.core.exceptions import DocumentProcessingException
 from src.schemas.response import DocumentProcessSuccessResponse
